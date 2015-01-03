@@ -1868,16 +1868,22 @@ public class Rtl8187Card extends UsbSource {
     		// int sz = mBulkEndpoint.getMaxPacketSize();
     		int sz = 2500;
 			byte[] buffer = new byte[sz];
+			byte[] header;
     		
 			while (!stopped) {
 				int l = mConnection.bulkTransfer(mBulkEndpoint, buffer, sz, 1000);
 				int fcsofft = 0;
+				header = null;
 				
 				if (l > 0) {
-					if (is_rtl8187b == 0 && l > 16)
+					if (is_rtl8187b == 0 && l > 16) {
+						header = Arrays.copyOfRange(buffer, l-16, l);
 						l = l - 16;
-					else if (l > 20)
+					}
+					else if (l > 20) {
+						header = Arrays.copyOfRange(buffer, l-20, l);
 						l = l - 20;
+					}
 				
 					boolean fcs = false;
 					if (l > 4) {
