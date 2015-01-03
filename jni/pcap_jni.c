@@ -19,12 +19,29 @@ typedef struct {
 	uint32_t pph_dlt;
 } __attribute__((packed)) ppi_packet_header;
 
+// CACE PPI field header
+typedef struct {
+	uint16_t pfh_type; /* Type */
+	uint16_t pfh_datalen; /* Length of data */
+} __attribute__((packed)) ppi_fieldheader_t;
 
 typedef struct {
 	pcap_t *dumpfile;
 	pcap_dumper_t *dumper;
 	unsigned int dlt;
 } pcap_jni_state;
+
+typedef struct {
+	uint64_t tsf_timer;
+	uint16_t flags;
+	uint16_t rate;
+	uint16_t freq_mhz;
+	uint16_t chan_flags;
+	uint8_t fhss_hopset;
+	uint8_t fhss_pattern;
+	int8_t signal_dbm;
+	int8_t noise_dbm;
+} __attribute__((packed)) ppi_80211_common;
 
 JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogger_openPcap(JNIEnv *env, jobject this, jstring file, 
 																		unsigned int dlt) {
@@ -204,13 +221,14 @@ JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogge
 
 JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogger_logPPIPacket(JNIEnv *env, jobject this,
 																	  jobject packet) {
-	jfieldID pcap_state_field, packet_bytes_field, packet_dlt_field;
+	jfieldID pcap_state_field, packet_bytes_field, packet_dlt_field, packet_signal_field;
 	jclass class_ioex, class_pcaplogger, class_packet;
 
 	pcap_jni_state *state;
 	jobject stateobj;
 
 	int packet_dlt;
+	int packet_signal;
 	jbyteArray packet_bytes;
 	jbyte *bytebuffer;
 	jboolean isCopy;
@@ -224,6 +242,8 @@ JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogge
 	// PPI mangling
 	uint8_t *logblob;
 	ppi_packet_header *ppih;
+	ppi_fieldheader_t * ppifh;
+	ppi_80211_common * ppif11c;
 
 	// Find the classes for io exception and filedescriptor in java
 	class_ioex = (*env)->FindClass(env, "java/io/IOException");
@@ -253,6 +273,10 @@ JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogge
 	if (packet_dlt_field == NULL)
 		return 0;
 
+	packet_signal_field = (*env)->GetFieldID(env, class_packet, "signal", "I");
+	if (packet_signal_field == NULL)
+		return 0;
+
 	stateobj = (*env)->GetObjectField(env, this, pcap_state_field);
 
 	if (stateobj == NULL) {
@@ -265,25 +289,33 @@ JNIEXPORT jboolean JNICALL Java_net_kismetwireless_android_pcapcapture_PcapLogge
 
 	packet_dlt = (*env)->GetIntField(env, packet, packet_dlt_field);
 	packet_bytes = (jbyteArray) (*env)->GetObjectField(env, packet, packet_bytes_field);
+	packet_signal = (*env)->GetIntField(env, packet, packet_signal_field);
 
 	bytebuffer = (*env)->GetByteArrayElements(env, packet_bytes, &isCopy);
 	bytebufferlength = (*env)->GetArrayLength(env, packet_bytes);
 
-	logblob = (uint8_t *) malloc(bytebufferlength + sizeof(ppi_packet_header));
+	logblob = (uint8_t *) calloc(1, bytebufferlength + sizeof(ppi_packet_header) + sizeof(ppi_fieldheader_t) + sizeof(ppi_80211_common));
 	ppih = (ppi_packet_header *) logblob;
 
 	ppih->pph_version = 0;
 	ppih->pph_flags = 0;
-	ppih->pph_len = htole16(sizeof(ppi_packet_header));
+	ppih->pph_len = htole16(sizeof(ppi_packet_header) + sizeof(ppi_fieldheader_t) + sizeof(ppi_80211_common));
 	ppih->pph_dlt = htole32(packet_dlt);
 	
-	memcpy(logblob + sizeof(ppi_packet_header), bytebuffer, bytebufferlength);
+	ppifh = (ppi_fieldheader_t *) (logblob+sizeof(ppi_packet_header));
+	ppifh->pfh_type = htole16(2);
+	ppifh->pfh_datalen = htole16(sizeof(ppi_80211_common));
+
+	ppif11c = (ppi_80211_common *) (logblob + sizeof(ppi_packet_header) + sizeof(ppi_fieldheader_t));
+	ppif11c->signal_dbm = htole32(packet_signal);
+
+	memcpy(logblob + sizeof(ppi_packet_header) + sizeof(ppi_fieldheader_t) + sizeof(ppi_80211_common) , bytebuffer, bytebufferlength);
 
 	gettimeofday(&ts, NULL);
 
 	wh.ts.tv_sec = ts.tv_sec;
 	wh.ts.tv_usec = ts.tv_usec;
-	wh.caplen = wh.len = bytebufferlength + sizeof(ppi_packet_header);
+	wh.caplen = wh.len = bytebufferlength + sizeof(ppi_packet_header) + sizeof(ppi_fieldheader_t) + sizeof(ppi_80211_common);
 
 	pcap_dump((u_char *) state->dumper, &wh, logblob);
 
