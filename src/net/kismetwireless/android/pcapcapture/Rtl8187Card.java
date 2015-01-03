@@ -1895,7 +1895,17 @@ public class Rtl8187Card extends UsbSource {
 					if (mPacketHandler != null) {
 						Packet p = new Packet(Arrays.copyOfRange(buffer, 0, l));
 						p.setDlt(PcapLogger.DLT_IEEE80211);
-					
+						if (header != null) {
+							// These calculations are most likely wrong
+							// but for my use it was not important with exact
+							// values just the values in relation to each other
+							// but be aware!
+							if (is_rtl8187b == 0) {
+								p.setSignal(-4 - ((27 * ((int) (header[6] & 0xFF))) >> 6));
+							} else {
+								p.setSignal((14 - header[13] / 2));
+							}
+						}
 						/*
 						if (fcs)
 							p.setFcs(Arrays.copyOfRange(buffer, fcsofft - 1, 4));
