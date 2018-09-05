@@ -1,3 +1,5 @@
+**Archived/For Reference** I do not actively use or maintain this anymore. It is left here for archiving purposes and hopefully someone will find it useful.
+
 **Android Pcap Capture**
 
 Android tool for capturing packets with a RTL8187 device nic connected with a USB-OTG cable.
